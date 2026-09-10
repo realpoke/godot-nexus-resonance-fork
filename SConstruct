@@ -179,6 +179,7 @@ if build_tests:
         build_dir + "test/test_playback_fade_continuity.cpp",
         build_dir + "test/test_reflection_type_policy.cpp",
         build_dir + "test/test_shutdown_playback_gates.cpp",
+        build_dir + "test/test_tail_drain_policy.cpp",
     ]
     test_dir = "build/tests"
     test_exe = env_test.Program(os.path.join(test_dir, "nexus_resonance_tests"), test_sources)

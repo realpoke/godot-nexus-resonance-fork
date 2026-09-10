@@ -7,6 +7,7 @@
 #include "resonance_server.h"
 #include "resonance_source_handle_policy.h"
 #include "resonance_utils.h"
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>

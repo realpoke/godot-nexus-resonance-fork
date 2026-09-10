@@ -6,6 +6,7 @@
 #include "resonance_player.h"
 #include "resonance_probe_volume.h"
 #include "resonance_server.h"
+#include "resonance_tail_drain_policy.h"
 #include "resonance_utils.h"
 #include <algorithm>
 #include <atomic>
@@ -868,7 +869,11 @@ int32_t ResonanceStreamPlayback::_mix_drain_zero_input_tails(AudioFrame* buffer,
                                                              ResonanceServer* srv_guard) {
     prev_mix_had_partial_input_pad_ = false;
     prev_mix_had_eos_tapered_input_pad_ = false;
-    if (!is_initialized || steam_context_stale_.load(std::memory_order_acquire))
+    if (!is_initialized) {
+        tail_drain_complete_.store(true, std::memory_order_release);
+        return 0;
+    }
+    if (steam_context_stale_.load(std::memory_order_acquire))
         return 0;
     if (!srv_guard || !srv_guard->is_initialized() || context != srv_guard->get_context_handle()) {
         steam_context_stale_.store(true, std::memory_order_release);
@@ -1046,10 +1051,8 @@ int32_t ResonanceStreamPlayback::_mix_drain_zero_input_tails(AudioFrame* buffer,
         resonance::pad_output_with_cosine_underrun_fade(buffer, frames, to_copy, last_mix_out_l_, last_mix_out_r_,
                                                         last_mix_out_valid_);
     }
-    // Near-silence with no tail residue: end grace early.
-    if (to_copy == 0 && !produced_any && last_mix_out_valid_ &&
-        std::abs(last_mix_out_l_) < 1.0e-5f && std::abs(last_mix_out_r_) < 1.0e-5f &&
-        !has_active_tail_residue()) {
+    if (resonance::tail_grace_end_early(produced_any, to_copy == 0, output_ring_reverb_l.get_available_read() == 0,
+                                        last_mix_out_valid_, last_mix_out_l_, last_mix_out_r_)) {
         tail_grace_blocks_remaining_.store(0, std::memory_order_release);
     }
     if (!produced_any && to_copy == 0) {
@@ -1058,8 +1061,8 @@ int32_t ResonanceStreamPlayback::_mix_drain_zero_input_tails(AudioFrame* buffer,
             tail_grace_blocks_remaining_.store(g - 1, std::memory_order_release);
         }
     }
-    const bool drained = (to_copy == 0) && !has_active_tail_residue() &&
-                         (tail_grace_blocks_remaining_.load(std::memory_order_acquire) <= 0);
+    const bool drained = resonance::tail_drain_complete(to_copy == 0, output_ring_reverb_l.get_available_read() == 0,
+                                                        tail_grace_blocks_remaining_.load(std::memory_order_acquire));
     if (frames > 0) {
         apply_playback_host_fades(buffer, frames);
         last_mix_out_l_ = buffer[frames - 1].left;
